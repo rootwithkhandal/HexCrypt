@@ -3,6 +3,7 @@
 
 import csv
 import os
+import hashlib
 from datetime import datetime
 
 import customtkinter as ctk
@@ -99,6 +100,7 @@ class HexCryptApp(ctk.CTk):
 
         self._tabs.add("🔒  Encrypt / Decrypt")
         self._tabs.add("🖼️  Steganography")
+        self._tabs.add("🔍  Hash & Integrity")
         self._tabs.add("📋  Logs")
         self._tabs.add("ℹ️  About")
 
@@ -107,6 +109,7 @@ class HexCryptApp(ctk.CTk):
         
         self._build_main_tab(self._tabs.tab("🔒  Encrypt / Decrypt"))
         self._build_steg_tab(self._tabs.tab("🖼️  Steganography"))
+        self._build_hash_tab(self._tabs.tab("🔍  Hash & Integrity"))
         self._build_log_tab(self._tabs.tab("📋  Logs"))
         self._build_about_tab(self._tabs.tab("ℹ️  About"))
 
@@ -315,6 +318,62 @@ class HexCryptApp(ctk.CTk):
             btn_frame, text="🔍  Extract Payload", width=300, height=BTN_HEIGHT, font=FONT_LABEL,
             fg_color="#2d6a4f", hover_color="#1b4332", command=self._do_steg_extract
         ).pack(side="left")
+
+    def _build_hash_tab(self, parent):
+        pad = {"padx": 16, "pady": 8}
+        
+        def select_file(entry_widget):
+            from tkinter import filedialog
+            path = filedialog.askopenfilename(filetypes=[("All Files", "*.*")])
+            if path:
+                entry_widget.delete(0, "end")
+                entry_widget.insert(0, path)
+
+        # File selector
+        ctk.CTkLabel(parent, text="Select File to Hash", font=FONT_LABEL, anchor="w").pack(fill="x", **pad)
+        row1 = ctk.CTkFrame(parent, fg_color="transparent")
+        row1.pack(fill="x", padx=16, pady=(0, 6))
+        
+        self._hash_file_entry = ctk.CTkEntry(row1, placeholder_text="Path to file...", width=480, height=36, font=FONT_SMALL)
+        self._hash_file_entry.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row1, text="Browse", width=120, height=36, command=lambda: select_file(self._hash_file_entry)).pack(side="left")
+
+        # Action Button
+        ctk.CTkButton(
+            parent, text="⚙️  Calculate Hashes", width=WIDGET_WIDTH, height=BTN_HEIGHT, font=FONT_LABEL, command=self._do_calculate_hashes
+        ).pack(padx=16, pady=16)
+
+        # Hash Results Area
+        result_frame = ctk.CTkFrame(parent)
+        result_frame.pack(fill="both", expand=True, padx=16, pady=8)
+        
+        self._hash_vars = {}
+        for algo in ["MD5", "SHA1", "SHA256", "SHA512"]:
+            row = ctk.CTkFrame(result_frame, fg_color="transparent")
+            row.pack(fill="x", padx=8, pady=6)
+            ctk.CTkLabel(row, text=algo, font=FONT_LABEL, width=80, anchor="e").pack(side="left", padx=8)
+            var = ctk.StringVar(value="")
+            entry = ctk.CTkEntry(row, textvariable=var, font=FONT_MONO)
+            entry.pack(side="left", fill="x", expand=True)
+            entry.configure(state="readonly")
+            self._hash_vars[algo] = var
+
+        # Compare Area
+        comp_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        comp_frame.pack(fill="x", padx=16, pady=16)
+        
+        ctk.CTkLabel(comp_frame, text="Verify against known hash:", font=FONT_LABEL, anchor="w").pack(fill="x", pady=(0, 4))
+        
+        self._compare_entry = ctk.CTkEntry(comp_frame, placeholder_text="Paste MD5/SHA1/SHA256/SHA512 hash here...", font=FONT_MONO)
+        self._compare_entry.pack(fill="x", pady=(0, 8))
+        
+        btn_row = ctk.CTkFrame(comp_frame, fg_color="transparent")
+        btn_row.pack(fill="x")
+        
+        ctk.CTkButton(btn_row, text="Verify Hash", width=150, height=32, font=FONT_SMALL, command=self._do_compare_hash).pack(side="left")
+        
+        self._compare_result_lbl = ctk.CTkLabel(btn_row, text="", font=FONT_LABEL)
+        self._compare_result_lbl.pack(side="left", padx=16)
 
     def _build_log_tab(self, parent):
         # Toolbar
@@ -583,6 +642,55 @@ class HexCryptApp(ctk.CTk):
             messagebox.showinfo("Success", f"Extracted payload to {output}")
         except Exception as e:
             messagebox.showerror("Steganography Error", f"Failed to extract:\n{e}")
+
+    def _do_calculate_hashes(self):
+        filepath = self._hash_file_entry.get().strip()
+        if not filepath or not os.path.isfile(filepath):
+            messagebox.showwarning("File Error", "Please select a valid file.")
+            return
+
+        self._set_status(f"Calculating hashes for {os.path.basename(filepath)}...")
+        self.update()
+
+        try:
+            h_md5 = hashlib.md5()
+            h_sha1 = hashlib.sha1()
+            h_sha256 = hashlib.sha256()
+            h_sha512 = hashlib.sha512()
+
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    h_md5.update(chunk)
+                    h_sha1.update(chunk)
+                    h_sha256.update(chunk)
+                    h_sha512.update(chunk)
+
+            self._hash_vars["MD5"].set(h_md5.hexdigest())
+            self._hash_vars["SHA1"].set(h_sha1.hexdigest())
+            self._hash_vars["SHA256"].set(h_sha256.hexdigest())
+            self._hash_vars["SHA512"].set(h_sha512.hexdigest())
+
+            self._compare_result_lbl.configure(text="")
+            self._set_status(f"Hashes calculated for {os.path.basename(filepath)}.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read file:\n{e}")
+
+    def _do_compare_hash(self):
+        known_hash = self._compare_entry.get().strip().lower()
+        if not known_hash:
+            return
+
+        match = False
+        for algo, var in self._hash_vars.items():
+            if known_hash == var.get().lower() and known_hash != "":
+                match = True
+                break
+
+        if match:
+            self._compare_result_lbl.configure(text="✅ MATCH!", text_color="#00ff00")
+        else:
+            self._compare_result_lbl.configure(text="❌ NO MATCH", text_color="#ff0000")
 
     def _copy_output(self):
         if self._current_output:
