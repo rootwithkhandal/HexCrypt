@@ -1,6 +1,6 @@
 # HexCrypt
 
-A desktop encryption/decryption tool built with Python and customtkinter, powered by the **Fernet** symmetric encryption scheme (AES-128-CBC + HMAC-SHA256).
+A desktop encryption/decryption tool built with Python and customtkinter, powered by the **AES-256-GCM** authenticated symmetric encryption scheme.
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -10,9 +10,11 @@ A desktop encryption/decryption tool built with Python and customtkinter, powere
 
 ## Features
 
-- 🔒 **Encrypt** any text using a Fernet key
+- 🔒 **Encrypt** any text using a secure 256-bit key
 - 🔓 **Decrypt** tokens back to plaintext
 - 🔑 **Generate Key** — create a fresh random key with one click
+- 🔐 **Passphrase Mode** — derive a key securely from a password using Argon2id
+- ⏱️ **Token Expiry (TTL)** — enforce message self-destruction after a specified time
 - 📋 **Operation Logs** — every encrypt/decrypt is timestamped and stored in `log.csv`
 - 🗑 **Clear Logs** — wipe the log history from within the app
 - 🌗 **Dark / Light theme** toggle
@@ -32,7 +34,7 @@ A desktop encryption/decryption tool built with Python and customtkinter, powere
 
 **Step 1 — Clone the repo**
 ```bash
-git clone https://github.com/rootwithkhandal/HexCrypt.git
+git clone https://github.com/rootwithkhandal/hexcrypt.git
 cd HexCrypt
 ```
 
@@ -50,7 +52,7 @@ pip install -r requirements.txt
 
 **Step 4 — Run the app**
 ```bash
-python app.py
+python -m hexcrypt.app
 ```
 
 ---
@@ -59,19 +61,37 @@ python app.py
 
 ### Encrypt
 1. Type your plaintext into **Input Text**.
-2. Either paste an existing key into the **Key** field or click **Generate Key** to create one automatically.
+2. Either paste an existing key into the **Key** field, click **Generate Key**, or toggle **Use Passphrase** and enter a password.
 3. Click **🔒 Encrypt**.
-4. Copy the output token and the key — you need both to decrypt later.
+4. Copy the output token. If using a raw key, copy it too — you need both to decrypt later.
 
 ### Decrypt
 1. Paste the encrypted token into **Input Text**.
-2. Paste the original key into the **Key** field.
-3. Click **🔓 Decrypt**.
+2. Paste the original key into the **Key** field, or toggle **Use Passphrase** and enter your password.
+3. (Optional) Enter a maximum age in the **TTL (Seconds)** field to enforce token self-destruction.
+4. Click **🔓 Decrypt**.
 
 ### Logs
 Switch to the **📋 Logs** tab to view a timestamped history of all operations. Use **Refresh** to reload and **Clear Logs** to wipe the history.
 
-> ⚠️ **Keep your key safe.** Fernet encryption is symmetric — without the original key, encrypted data cannot be recovered.
+### Keystore (CLI)
+HexCrypt now includes a command-line interface (`cli.py`) for managing an encrypted JSON vault of named keys, secured by a master password. This replaces the need to store plaintext `.key` files on disk.
+
+```bash
+# Initialize the keystore
+python -m hexcrypt.cli keystore init
+
+# Add a key (auto-generates if value not provided)
+python -m hexcrypt.cli keystore add my_secret_key
+
+# List all named keys
+python -m hexcrypt.cli keystore list
+
+# Retrieve a key
+python -m hexcrypt.cli keystore get my_secret_key
+```
+
+> ⚠️ **Keep your key safe.** AES-GCM encryption is symmetric — without the original key, encrypted data cannot be recovered.
 
 ---
 
@@ -79,8 +99,11 @@ Switch to the **📋 Logs** tab to view a timestamped history of all operations.
 
 ```
 HexCrypt/
-├── app.py            # GUI application (HexCryptApp class)
-├── core.py           # Encryption/decryption logic (importable module)
+├── hexcrypt/         # Core application package
+│   ├── app.py        # GUI application logic
+│   ├── cli.py        # CLI application logic
+│   ├── core.py       # Encryption/decryption engine
+│   └── keystore.py   # Keystore manager
 ├── log.csv           # Auto-generated operation log (git-ignored)
 ├── requirements.txt  # Python dependencies
 └── README.md
@@ -93,7 +116,7 @@ HexCrypt/
 | Package | Purpose |
 |---|---|
 | `customtkinter >= 5.2.0` | Modern themed tkinter widgets |
-| `cryptography >= 42.0.0` | Fernet encryption (AES-128-CBC + HMAC-SHA256) |
+| `cryptography >= 42.0.0` | AES-GCM encryption primitive |
 
 ---
 

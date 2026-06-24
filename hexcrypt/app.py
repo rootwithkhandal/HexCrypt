@@ -1,5 +1,5 @@
 # app.py — HexCrypt GUI
-# A Fernet-based encryption/decryption desktop app built with customtkinter.
+# An AES-GCM encryption/decryption desktop app built with customtkinter.
 
 import csv
 import os
@@ -8,7 +8,8 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
 
-from cryptography.fernet import Fernet
+from hexcrypt import core
+from cryptography.exceptions import InvalidTag
 
 # ─────────────────────────────────────────────
 #  Constants
@@ -38,28 +39,14 @@ def _ensure_log_file():
 
 
 def _append_log(operation: str, input_text: str, key: str, output: str):
-    """Prepend a new row to the log file (newest entry first)."""
+    """Append a new row to the log file."""
     _ensure_log_file()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_row = [timestamp, operation, input_text, key, output]
-
-    with open(LOG_FILE, mode="r", encoding="utf-8") as f:
-        existing = list(csv.reader(f))
-
-    with open(LOG_FILE, mode="w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(LOG_HEADER)
-        writer.writerow(new_row)
-        # Skip old header row if present, write the rest
-        for row in existing:
-            if row != LOG_HEADER:
-                writer.writerow(row)
+    with open(LOG_FILE, mode="a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([timestamp, operation, input_text, key, output])
 
 
-def _copy_to_clipboard(root: ctk.CTk, text: str):
-    """Copy text to the system clipboard."""
-    root.clipboard_clear()
-    root.clipboard_append(text)
+
 
 
 # ─────────────────────────────────────────────
@@ -141,29 +128,50 @@ class HexCryptApp(ctk.CTk):
         self._input_entry.pack(**pad)
 
         # Key row
-        ctk.CTkLabel(parent, text="Key", font=FONT_LABEL, anchor="w").pack(
-            fill="x", **pad
-        )
+        # Key header row
+        key_header = ctk.CTkFrame(parent, fg_color="transparent")
+        key_header.pack(fill="x", padx=16, pady=(6, 0))
+        ctk.CTkLabel(key_header, text="Key or Passphrase", font=FONT_LABEL, anchor="w").pack(side="left")
+        self._passphrase_var = ctk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            key_header, text="Use Passphrase", font=FONT_SMALL,
+            variable=self._passphrase_var, command=self._toggle_passphrase
+        ).pack(side="right")
+
         key_row = ctk.CTkFrame(parent, fg_color="transparent")
-        key_row.pack(fill="x", **pad)
+        key_row.pack(fill="x", padx=16, pady=(0, 6))
 
         self._key_entry = ctk.CTkEntry(
             key_row,
-            placeholder_text="Paste existing key here (leave blank to auto-generate on encrypt)",
+            placeholder_text="Paste key here (leave blank to auto-generate)",
             width=520,
             height=40,
             font=FONT_MONO,
         )
         self._key_entry.pack(side="left", padx=(0, 8))
 
-        ctk.CTkButton(
+        self._generate_btn = ctk.CTkButton(
             key_row,
             text="Generate Key",
             width=112,
             height=40,
             font=FONT_SMALL,
             command=self._generate_key,
-        ).pack(side="left")
+        )
+        self._generate_btn.pack(side="left")
+
+        # TTL row
+        ttl_row = ctk.CTkFrame(parent, fg_color="transparent")
+        ttl_row.pack(fill="x", padx=16, pady=(10, 0))
+        ctk.CTkLabel(ttl_row, text="TTL (Seconds)", font=FONT_LABEL, anchor="w").pack(side="left")
+        self._ttl_entry = ctk.CTkEntry(
+            ttl_row,
+            placeholder_text="e.g. 60 (leave blank for no expiry)",
+            width=280,
+            height=30,
+            font=FONT_SMALL,
+        )
+        self._ttl_entry.pack(side="right")
 
         # Action buttons
         btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -276,15 +284,19 @@ class HexCryptApp(ctk.CTk):
         ctk.CTkLabel(parent, text=f"Version {APP_VERSION}", font=FONT_SMALL).pack(pady=2)
 
         info = (
-            "HexCrypt is a desktop encryption tool powered by the Fernet\n"
-            "symmetric encryption scheme (AES-128-CBC + HMAC-SHA256).\n\n"
+            "HexCrypt is a desktop encryption tool powered by the AES-256-GCM\n"
+            "symmetric authenticated encryption scheme.\n\n"
             "How to use:\n"
             "  • Encrypt — type your text, optionally paste or generate a key,\n"
             "    then click Encrypt. The key is required to decrypt later.\n\n"
             "  • Decrypt — paste the encrypted token into Input Text,\n"
             "    paste the original key into the Key field, then click Decrypt.\n\n"
-            "  • Generate Key — creates a fresh random Fernet key and fills\n"
+            "  • Generate Key — creates a fresh random AES-256-GCM key and fills\n"
             "    the Key field automatically.\n\n"
+            "  • Passphrase Mode — toggle 'Use Passphrase' to derive a key securely\n"
+            "    from a password using Argon2id.\n\n"
+            "  • TTL Expiry — enter a time in seconds in the TTL field during\n"
+            "    decryption to enforce token self-destruction.\n\n"
             "  • Logs — every operation is recorded with a timestamp.\n\n"
             "⚠  Keep your key safe. Without it, encrypted data cannot be recovered."
         )
@@ -294,83 +306,126 @@ class HexCryptApp(ctk.CTk):
 
     # ── Actions ──────────────────────────────
     def _generate_key(self):
-        key = Fernet.generate_key().decode()
+        key = core.generate_key()
         self._key_entry.delete(0, "end")
         self._key_entry.insert(0, key)
         self._set_status("New key generated and placed in the Key field.")
 
+    def _toggle_passphrase(self):
+        if self._passphrase_var.get():
+            self._key_entry.configure(placeholder_text="Enter passphrase here", show="*")
+            self._generate_btn.configure(state="disabled")
+        else:
+            self._key_entry.configure(placeholder_text="Paste key here (leave blank to auto-generate)", show="")
+            self._generate_btn.configure(state="normal")
+
     def _do_encrypt(self):
         input_text = self._input_entry.get().strip()
         key_text   = self._key_entry.get().strip()
+        is_passphrase = self._passphrase_var.get()
 
         if not input_text:
             messagebox.showwarning("Missing Input", "Please enter text to encrypt.")
             return
 
-        # Auto-generate key if blank
-        if not key_text:
-            key_text = Fernet.generate_key().decode()
-            self._key_entry.delete(0, "end")
-            self._key_entry.insert(0, key_text)
-
-        try:
-            f = Fernet(key_text)
-            result = f.encrypt(input_text.encode()).decode()
-        except Exception as e:
-            messagebox.showerror("Encryption Error", str(e))
-            return
+        if is_passphrase:
+            if not key_text:
+                messagebox.showwarning("Missing Passphrase", "Please enter a passphrase.")
+                return
+            try:
+                result = core.encrypt_with_passphrase(input_text, key_text)
+            except Exception as e:
+                messagebox.showerror("Encryption Error", str(e))
+                return
+        else:
+            # Auto-generate key if blank
+            if not key_text:
+                key_text = core.generate_key()
+                self._key_entry.delete(0, "end")
+                self._key_entry.insert(0, key_text)
+            try:
+                result = core.encrypt_text(input_text, key_text)
+            except Exception as e:
+                messagebox.showerror("Encryption Error", str(e))
+                return
 
         self._current_output = result
-        self._current_key    = key_text
+        self._current_key    = "***PASSPHRASE***" if is_passphrase else key_text
         self._set_output(result)
-        self._set_key_display(key_text)
-        _append_log("Encrypt", input_text, key_text, result)
+        self._set_key_display(self._current_key)
+        _append_log("Encrypt", input_text, self._current_key, result)
         self._set_status(f"Encrypted successfully at {datetime.now().strftime('%H:%M:%S')}.")
 
     def _do_decrypt(self):
         input_text = self._input_entry.get().strip()
         key_text   = self._key_entry.get().strip()
+        ttl_text   = self._ttl_entry.get().strip()
+        is_passphrase = self._passphrase_var.get()
 
         if not input_text:
             messagebox.showwarning("Missing Input", "Please enter the encrypted token.")
             return
         if not key_text:
-            messagebox.showwarning("Missing Key", "A key is required for decryption.")
+            messagebox.showwarning("Missing Key", "A key or passphrase is required for decryption.")
             return
 
+        ttl = None
+        if ttl_text:
+            try:
+                ttl = int(ttl_text)
+            except ValueError:
+                messagebox.showwarning("Invalid TTL", "TTL must be a valid integer number of seconds.")
+                return
+
         try:
-            f = Fernet(key_text)
-            result = f.decrypt(input_text.encode()).decode()
+            if is_passphrase:
+                result = core.decrypt_with_passphrase(input_text, key_text, ttl=ttl)
+            else:
+                result = core.decrypt_text(input_text, key_text, ttl=ttl)
+        except core.ExpiredToken:
+            messagebox.showerror("Decryption Error", "Token Expired: This message self-destructed.")
+            return
+        except InvalidTag:
+            messagebox.showerror("Decryption Error", "Authentication failed: Invalid key or corrupted data.")
+            return
+        except ValueError:
+            messagebox.showerror("Decryption Error", "Invalid base64 token or key format.")
+            return
         except Exception as e:
             messagebox.showerror("Decryption Error", f"Could not decrypt.\n\n{e}")
             return
 
         self._current_output = result
-        self._current_key    = key_text
+        self._current_key    = "***PASSPHRASE***" if is_passphrase else key_text
         self._set_output(result)
-        self._set_key_display(key_text)
-        _append_log("Decrypt", input_text, key_text, result)
+        self._set_key_display(self._current_key)
+        _append_log("Decrypt", input_text, self._current_key, result)
         self._set_status(f"Decrypted successfully at {datetime.now().strftime('%H:%M:%S')}.")
 
     def _clear_fields(self):
         self._input_entry.delete(0, "end")
         self._key_entry.delete(0, "end")
+        self._ttl_entry.delete(0, "end")
         self._set_output("")
         self._set_key_display("")
         self._current_output = ""
         self._current_key    = ""
+        self._passphrase_var.set(False)
+        self._toggle_passphrase()
         self._set_status("Fields cleared.")
 
     def _copy_output(self):
         if self._current_output:
-            _copy_to_clipboard(self, self._current_output)
+            self.clipboard_clear()
+            self.clipboard_append(self._current_output)
             self._set_status("Output copied to clipboard.")
         else:
             self._set_status("Nothing to copy.")
 
     def _copy_key(self):
         if self._current_key:
-            _copy_to_clipboard(self, self._current_key)
+            self.clipboard_clear()
+            self.clipboard_append(self._current_key)
             self._set_status("Key copied to clipboard.")
         else:
             self._set_status("No key to copy.")
@@ -395,14 +450,16 @@ class HexCryptApp(ctk.CTk):
             )
             return
 
-        if not rows:
+        if not rows or len(rows) <= 1:
             ctk.CTkLabel(self._log_frame, text="Log is empty.", font=FONT_SMALL).grid(
                 row=0, column=0, padx=8, pady=8
             )
             return
 
+        display_rows = [rows[0]] + list(reversed(rows[1:]))
+
         col_widths = [140, 80, 160, 200, 200]
-        for i, row in enumerate(rows):
+        for i, row in enumerate(display_rows):
             is_header = i == 0
             bg = "#1f538d" if is_header else ("#2b2b2b" if i % 2 == 0 else "#1e1e1e")
             font = ("Poppins", 12, "bold") if is_header else FONT_SMALL
