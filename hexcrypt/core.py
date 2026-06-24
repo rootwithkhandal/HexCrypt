@@ -2,8 +2,12 @@ import os
 import time
 import struct
 import base64
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
 
 class ExpiredToken(Exception):
     pass
@@ -165,5 +169,101 @@ def decrypt_file_with_passphrase(input_path: str, output_path: str, passphrase: 
     aesgcm = AESGCM(key)
     plaintext = aesgcm.decrypt(nonce, ciphertext, None)
     
+    with open(output_path, 'wb') as f:
+        f.write(plaintext)
+
+def generate_x25519_keypair() -> tuple[str, str]:
+    """Generate an X25519 keypair and return (private_key_b64, public_key_b64)."""
+    priv = X25519PrivateKey.generate()
+    pub = priv.public_key()
+    
+    priv_bytes = priv.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    pub_bytes = pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    
+    return (
+        base64.urlsafe_b64encode(priv_bytes).decode('utf-8'),
+        base64.urlsafe_b64encode(pub_bytes).decode('utf-8')
+    )
+
+def encrypt_asymmetric(data: bytes, recipient_pub_b64: str) -> str:
+    """Encrypt using an ephemeral X25519 key and ChaCha20Poly1305."""
+    recipient_pub_bytes = base64.urlsafe_b64decode(recipient_pub_b64)
+    recipient_pub = X25519PublicKey.from_public_bytes(recipient_pub_bytes)
+    
+    ephem_priv = X25519PrivateKey.generate()
+    ephem_pub = ephem_priv.public_key()
+    ephem_pub_bytes = ephem_pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    
+    shared_key = ephem_priv.exchange(recipient_pub)
+    derived_key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"x25519-chacha20-poly1305",
+    ).derive(shared_key)
+    
+    chacha = ChaCha20Poly1305(derived_key)
+    nonce = os.urandom(12)
+    ciphertext = chacha.encrypt(nonce, data, None)
+    
+    timestamp = struct.pack(">Q", int(time.time()))
+    payload = ephem_pub_bytes + timestamp + nonce + ciphertext
+    return base64.urlsafe_b64encode(payload).decode('utf-8')
+
+def decrypt_asymmetric(encrypted_b64: str, priv_b64: str, ttl: int = None) -> bytes:
+    """Decrypt an asymmetric token."""
+    priv_bytes = base64.urlsafe_b64decode(priv_b64)
+    priv = X25519PrivateKey.from_private_bytes(priv_bytes)
+    
+    data = base64.urlsafe_b64decode(encrypted_b64)
+    if len(data) < 68:
+        raise ValueError("Invalid token size for asymmetric decryption")
+        
+    ephem_pub_bytes = data[:32]
+    timestamp_bytes = data[32:40]
+    nonce = data[40:52]
+    ciphertext = data[52:]
+    
+    if ttl is not None:
+        timestamp = struct.unpack(">Q", timestamp_bytes)[0]
+        if int(time.time()) - timestamp > ttl:
+            raise ExpiredToken("Token has expired")
+            
+    ephem_pub = X25519PublicKey.from_public_bytes(ephem_pub_bytes)
+    shared_key = priv.exchange(ephem_pub)
+    
+    derived_key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"x25519-chacha20-poly1305",
+    ).derive(shared_key)
+    
+    chacha = ChaCha20Poly1305(derived_key)
+    return chacha.decrypt(nonce, ciphertext, None)
+
+def encrypt_file_asymmetric(input_path: str, output_path: str, recipient_pub_b64: str):
+    """Encrypt a file asymmetrically and write its base64 token to output_path."""
+    with open(input_path, 'rb') as f:
+        data = f.read()
+    encrypted_b64 = encrypt_asymmetric(data, recipient_pub_b64)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(encrypted_b64)
+
+def decrypt_file_asymmetric(input_path: str, output_path: str, priv_b64: str, ttl: int = None):
+    """Decrypt an asymmetrically encrypted file containing a base64 token and write raw bytes to output_path."""
+    with open(input_path, 'r', encoding='utf-8') as f:
+        encrypted_b64 = f.read().strip()
+    plaintext = decrypt_asymmetric(encrypted_b64, priv_b64, ttl)
     with open(output_path, 'wb') as f:
         f.write(plaintext)

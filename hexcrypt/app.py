@@ -101,12 +101,13 @@ class HexCryptApp(ctk.CTk):
         self._tabs.add("📋  Logs")
         self._tabs.add("ℹ️  About")
 
+        # ── Status bar ──
+        self._status_var = ctk.StringVar(value="Ready.")
+        
         self._build_main_tab(self._tabs.tab("🔒  Encrypt / Decrypt"))
         self._build_log_tab(self._tabs.tab("📋  Logs"))
         self._build_about_tab(self._tabs.tab("ℹ️  About"))
 
-        # ── Status bar ──
-        self._status_var = ctk.StringVar(value="Ready.")
         ctk.CTkLabel(
             self, textvariable=self._status_var, font=FONT_SMALL, anchor="w"
         ).pack(fill="x", padx=24, pady=(0, 8))

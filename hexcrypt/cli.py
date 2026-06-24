@@ -21,6 +21,10 @@ def main():
     add_parser.add_argument("name", help="Name of the key")
     add_parser.add_argument("key", nargs="?", help="Base64 AES-GCM key (leave blank to auto-generate)")
 
+    # gen-keypair
+    gk_parser = ks_sub.add_parser("gen-keypair", help="Generate an X25519 keypair")
+    gk_parser.add_argument("name", help="Base name for the keypair (e.g. 'alice' -> 'alice_priv', 'alice_pub')")
+
     # get
     get_parser = ks_sub.add_parser("get", help="Get a key by name")
     get_parser.add_argument("name", help="Name of the key")
@@ -34,17 +38,23 @@ def main():
 
     # encrypt
     enc_parser = subparsers.add_parser("encrypt", help="Encrypt a file or directory")
+    enc_parser.add_argument("--mode", choices=["symmetric", "asymmetric"], default="symmetric", help="Encryption mode")
     enc_parser.add_argument("--dir", help="Directory to encrypt")
     enc_parser.add_argument("--file", help="Single file to encrypt")
-    enc_parser.add_argument("--key", help="Raw base64 key")
-    enc_parser.add_argument("--key-name", help="Key name from keystore")
+    enc_parser.add_argument("--key", help="Raw base64 key (symmetric)")
+    enc_parser.add_argument("--key-name", help="Key name from keystore (symmetric)")
+    enc_parser.add_argument("--recipient-pub", help="Recipient public key base64 (asymmetric)")
+    enc_parser.add_argument("--recipient-key-name", help="Recipient public key name from keystore (asymmetric)")
 
     # decrypt
     dec_parser = subparsers.add_parser("decrypt", help="Decrypt a file or directory")
+    dec_parser.add_argument("--mode", choices=["symmetric", "asymmetric"], default="symmetric", help="Decryption mode")
     dec_parser.add_argument("--dir", help="Directory to decrypt")
     dec_parser.add_argument("--file", help="Single file to decrypt")
-    dec_parser.add_argument("--key", help="Raw base64 key")
-    dec_parser.add_argument("--key-name", help="Key name from keystore")
+    dec_parser.add_argument("--key", help="Raw base64 key (symmetric)")
+    dec_parser.add_argument("--key-name", help="Key name from keystore (symmetric)")
+    dec_parser.add_argument("--priv", help="Your private key base64 (asymmetric)")
+    dec_parser.add_argument("--priv-key-name", help="Your private key name from keystore (asymmetric)")
 
     args = parser.parse_args()
 
@@ -73,6 +83,13 @@ def main():
             vault[args.name] = key_value
             keystore.save_vault(password, vault)
             print(f"Key '{args.name}' saved securely.")
+            
+        elif args.ks_command == "gen-keypair":
+            priv, pub = core.generate_x25519_keypair()
+            vault[f"{args.name}_priv"] = priv
+            vault[f"{args.name}_pub"] = pub
+            keystore.save_vault(password, vault)
+            print(f"Keypair '{args.name}' generated. Saved '{args.name}_priv' and '{args.name}_pub'.")
             
         elif args.ks_command == "get":
             if args.name in vault:
@@ -107,31 +124,67 @@ def main():
         key_value = None
         passphrase = None
         
-        if args.key:
-            key_value = args.key
-        elif args.key_name:
-            master_password = getpass.getpass("Keystore Master Password: ")
-            try:
-                vault = keystore.load_vault(master_password)
-                key_value = vault[args.key_name]
-            except Exception:
-                print("Failed to load keystore or key not found.")
-                sys.exit(1)
+        if args.mode == "symmetric":
+            if args.key:
+                key_value = args.key
+            elif args.key_name:
+                master_password = getpass.getpass("Keystore Master Password: ")
+                try:
+                    vault = keystore.load_vault(master_password)
+                    key_value = vault[args.key_name]
+                except Exception:
+                    print("Failed to load keystore or key not found.")
+                    sys.exit(1)
+            else:
+                passphrase = getpass.getpass("Encryption Passphrase: ")
         else:
-            passphrase = getpass.getpass("Encryption Passphrase: ")
+            if is_encrypt:
+                if args.recipient_pub:
+                    key_value = args.recipient_pub
+                elif args.recipient_key_name:
+                    master_password = getpass.getpass("Keystore Master Password: ")
+                    try:
+                        vault = keystore.load_vault(master_password)
+                        key_value = vault[args.recipient_key_name]
+                    except Exception:
+                        print("Failed to load keystore or recipient key not found.")
+                        sys.exit(1)
+                else:
+                    print("Must specify --recipient-pub or --recipient-key-name for asymmetric encryption.")
+                    sys.exit(1)
+            else:
+                if args.priv:
+                    key_value = args.priv
+                elif args.priv_key_name:
+                    master_password = getpass.getpass("Keystore Master Password: ")
+                    try:
+                        vault = keystore.load_vault(master_password)
+                        key_value = vault[args.priv_key_name]
+                    except Exception:
+                        print("Failed to load keystore or private key not found.")
+                        sys.exit(1)
+                else:
+                    print("Must specify --priv or --priv-key-name for asymmetric decryption.")
+                    sys.exit(1)
             
         def process_file(in_path, out_path):
             try:
-                if is_encrypt:
-                    if key_value:
-                        core.encrypt_file(in_path, out_path, key_value)
+                if args.mode == "asymmetric":
+                    if is_encrypt:
+                        core.encrypt_file_asymmetric(in_path, out_path, key_value)
                     else:
-                        core.encrypt_file_with_passphrase(in_path, out_path, passphrase)
+                        core.decrypt_file_asymmetric(in_path, out_path, key_value)
                 else:
-                    if key_value:
-                        core.decrypt_file(in_path, out_path, key_value)
+                    if is_encrypt:
+                        if key_value:
+                            core.encrypt_file(in_path, out_path, key_value)
+                        else:
+                            core.encrypt_file_with_passphrase(in_path, out_path, passphrase)
                     else:
-                        core.decrypt_file_with_passphrase(in_path, out_path, passphrase)
+                        if key_value:
+                            core.decrypt_file(in_path, out_path, key_value)
+                        else:
+                            core.decrypt_file_with_passphrase(in_path, out_path, passphrase)
                 print(f"{'Encrypted' if is_encrypt else 'Decrypted'}: {in_path} -> {out_path}")
             except Exception as e:
                 print(f"Error processing {in_path}: {e}")
