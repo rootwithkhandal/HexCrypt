@@ -55,13 +55,12 @@ function App() {
     addLog(`Starting ${operation} process...`);
     
     try {
-      const res = await fetch(`/api/${operation}`, {
+      const res = await fetch(`/api/${operation}/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           text: inputText, 
           key: keyInput, 
-          mode, 
           ttl: ttl ? parseInt(ttl, 10) : null 
         })
       });

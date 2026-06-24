@@ -1,22 +1,17 @@
+import io
 from PIL import Image
 import struct
-import os
 
-def embed_data(carrier_path: str, payload_path: str, output_path: str, filename: str = ""):
-    """Embed the contents of payload_path into the LSBs of the carrier image."""
-    with open(payload_path, 'rb') as f:
-        payload = f.read()
-    
-    # Pack filename: 2-byte length + filename bytes
+def embed_data(carrier_bytes: bytes, payload_bytes: bytes, filename: str = "") -> bytes:
+    """Embed payload_bytes into the LSBs of the carrier image, returning the new PNG bytes."""
     name_bytes = filename.encode('utf-8')
     name_len = struct.pack(">H", len(name_bytes))
-    full_payload = name_len + name_bytes + payload
+    full_payload = name_len + name_bytes + payload_bytes
     
-    # Prefix with 8-byte length of full_payload
     length_bytes = struct.pack(">Q", len(full_payload))
     data = length_bytes + full_payload
     
-    img = Image.open(carrier_path)
+    img = Image.open(io.BytesIO(carrier_bytes))
     if img.mode not in ('RGB', 'RGBA'):
         img = img.convert('RGBA')
         
@@ -27,10 +22,8 @@ def embed_data(carrier_path: str, payload_path: str, output_path: str, filename:
     if required_bits > len(pixels) * num_channels:
         raise ValueError(f"Carrier image is too small. Needs {required_bits} bits, but image has {len(pixels) * num_channels} bits.")
     
-    # Flatten pixels
     flat_pixels = [channel for pixel in pixels for channel in pixel]
     
-    # Embed data
     for i in range(len(data)):
         byte = data[i]
         for j in range(8):
@@ -38,21 +31,22 @@ def embed_data(carrier_path: str, payload_path: str, output_path: str, filename:
             idx = i * 8 + j
             flat_pixels[idx] = (flat_pixels[idx] & 0xFE) | bit
             
-    # Reconstruct pixels
     new_pixels = [tuple(flat_pixels[i:i+num_channels]) for i in range(0, len(flat_pixels), num_channels)]
     img.putdata(new_pixels)
-    img.save(output_path, "PNG")
+    
+    out_io = io.BytesIO()
+    img.save(out_io, "PNG")
+    return out_io.getvalue()
 
-def extract_data(carrier_path: str, output_path: str) -> str:
-    """Extract data from the LSBs of a carrier image, write it to output_path, and return original filename."""
-    img = Image.open(carrier_path)
+def extract_data(carrier_bytes: bytes) -> tuple[str, bytes]:
+    """Extract data from a stego image, returning (filename, payload_bytes)."""
+    img = Image.open(io.BytesIO(carrier_bytes))
     if img.mode not in ('RGB', 'RGBA'):
         img = img.convert('RGBA')
         
     pixels = list(img.getdata())
     flat_pixels = [channel for pixel in pixels for channel in pixel]
     
-    # Extract first 8 bytes for length
     if len(flat_pixels) < 64:
         raise ValueError("Image too small to contain a HexCrypt stego header.")
         
@@ -90,7 +84,4 @@ def extract_data(carrier_path: str, output_path: str) -> str:
         filename = ""
         actual_payload = full_payload
         
-    with open(output_path, 'wb') as f:
-        f.write(actual_payload)
-        
-    return filename
+    return filename, bytes(actual_payload)

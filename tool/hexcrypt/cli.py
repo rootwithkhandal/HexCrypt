@@ -234,15 +234,21 @@ def main():
                 print("Cannot specify both --embed and --extract")
                 sys.exit(1)
             try:
-                steg.embed_data(args.carrier, args.embed, args.out)
+                with open(args.carrier, 'rb') as c_file, open(args.embed, 'rb') as p_file:
+                    out_bytes = steg.embed_data(c_file.read(), p_file.read(), os.path.basename(args.embed))
+                with open(args.out, 'wb') as o_file:
+                    o_file.write(out_bytes)
                 print(f"Successfully embedded '{args.embed}' into '{args.carrier}', saved to '{args.out}'.")
             except Exception as e:
                 print(f"Embedding failed: {e}")
                 sys.exit(1)
         elif args.extract:
             try:
-                steg.extract_data(args.carrier, args.out)
-                print(f"Successfully extracted payload from '{args.carrier}', saved to '{args.out}'.")
+                with open(args.carrier, 'rb') as c_file:
+                    filename, p_bytes = steg.extract_data(c_file.read())
+                with open(args.out, 'wb') as o_file:
+                    o_file.write(p_bytes)
+                print(f"Successfully extracted payload (original name: {filename}) from '{args.carrier}', saved to '{args.out}'.")
             except Exception as e:
                 print(f"Extraction failed: {e}")
                 sys.exit(1)

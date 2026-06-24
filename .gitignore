@@ -45,3 +45,9 @@ secrets.py
 
 
 tests/
+
+# Web App / Node
+node_modules/
+dist/
+build/
+.npm/
