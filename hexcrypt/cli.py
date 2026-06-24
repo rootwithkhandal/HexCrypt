@@ -56,6 +56,13 @@ def main():
     dec_parser.add_argument("--priv", help="Your private key base64 (asymmetric)")
     dec_parser.add_argument("--priv-key-name", help="Your private key name from keystore (asymmetric)")
 
+    # steg
+    steg_parser = subparsers.add_parser("steg", help="Hide files inside images using LSB steganography")
+    steg_parser.add_argument("--embed", help="File to embed into the carrier image")
+    steg_parser.add_argument("--extract", action="store_true", help="Extract file from the carrier image")
+    steg_parser.add_argument("--carrier", required=True, help="Carrier image path (PNG)")
+    steg_parser.add_argument("--out", required=True, help="Output path (PNG if embedding, file if extracting)")
+
     args = parser.parse_args()
 
     if args.command == "keystore":
@@ -213,6 +220,33 @@ def main():
                     process_file(in_file, out_file)
             
             print(f"Directory processing complete. Output saved to: {out_dir}")
+    elif args.command == "steg":
+        try:
+            from hexcrypt import steg
+        except ImportError:
+            print("Pillow library is required for steganography. Please run: pip install Pillow")
+            sys.exit(1)
+            
+        if args.embed:
+            if args.extract:
+                print("Cannot specify both --embed and --extract")
+                sys.exit(1)
+            try:
+                steg.embed_data(args.carrier, args.embed, args.out)
+                print(f"Successfully embedded '{args.embed}' into '{args.carrier}', saved to '{args.out}'.")
+            except Exception as e:
+                print(f"Embedding failed: {e}")
+                sys.exit(1)
+        elif args.extract:
+            try:
+                steg.extract_data(args.carrier, args.out)
+                print(f"Successfully extracted payload from '{args.carrier}', saved to '{args.out}'.")
+            except Exception as e:
+                print(f"Extraction failed: {e}")
+                sys.exit(1)
+        else:
+            print("Must specify either --embed or --extract")
+            sys.exit(1)
     else:
         parser.print_help()
 

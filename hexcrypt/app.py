@@ -98,6 +98,7 @@ class HexCryptApp(ctk.CTk):
         self._tabs.pack(padx=20, pady=12, fill="both", expand=True)
 
         self._tabs.add("🔒  Encrypt / Decrypt")
+        self._tabs.add("🖼️  Steganography")
         self._tabs.add("📋  Logs")
         self._tabs.add("ℹ️  About")
 
@@ -105,6 +106,7 @@ class HexCryptApp(ctk.CTk):
         self._status_var = ctk.StringVar(value="Ready.")
         
         self._build_main_tab(self._tabs.tab("🔒  Encrypt / Decrypt"))
+        self._build_steg_tab(self._tabs.tab("🖼️  Steganography"))
         self._build_log_tab(self._tabs.tab("📋  Logs"))
         self._build_about_tab(self._tabs.tab("ℹ️  About"))
 
@@ -114,6 +116,14 @@ class HexCryptApp(ctk.CTk):
 
     def _build_main_tab(self, parent):
         pad = {"padx": 16, "pady": 6}
+
+        # Mode selector
+        self._mode_var = ctk.StringVar(value="Symmetric")
+        mode_seg = ctk.CTkSegmentedButton(
+            parent, values=["Symmetric", "Asymmetric"],
+            variable=self._mode_var, command=self._on_mode_change
+        )
+        mode_seg.pack(fill="x", padx=16, pady=(6, 12))
 
         # Input
         ctk.CTkLabel(parent, text="Input Text", font=FONT_LABEL, anchor="w").pack(
@@ -132,12 +142,15 @@ class HexCryptApp(ctk.CTk):
         # Key header row
         key_header = ctk.CTkFrame(parent, fg_color="transparent")
         key_header.pack(fill="x", padx=16, pady=(6, 0))
-        ctk.CTkLabel(key_header, text="Key or Passphrase", font=FONT_LABEL, anchor="w").pack(side="left")
+        self._key_label = ctk.CTkLabel(key_header, text="Key or Passphrase", font=FONT_LABEL, anchor="w")
+        self._key_label.pack(side="left")
+        
         self._passphrase_var = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(
+        self._passphrase_switch = ctk.CTkSwitch(
             key_header, text="Use Passphrase", font=FONT_SMALL,
             variable=self._passphrase_var, command=self._toggle_passphrase
-        ).pack(side="right")
+        )
+        self._passphrase_switch.pack(side="right")
 
         key_row = ctk.CTkFrame(parent, fg_color="transparent")
         key_row.pack(fill="x", padx=16, pady=(0, 6))
@@ -248,6 +261,61 @@ class HexCryptApp(ctk.CTk):
         )
         self._key_display.pack(**pad)
 
+    def _build_steg_tab(self, parent):
+        pad = {"padx": 16, "pady": 8}
+        
+        # Helper for file selection
+        def select_file(entry_widget, mode="open", filetypes=None):
+            from tkinter import filedialog
+            if filetypes is None:
+                filetypes = [("All Files", "*.*")]
+            
+            if mode == "open":
+                path = filedialog.askopenfilename(filetypes=filetypes)
+            else:
+                path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=filetypes)
+                
+            if path:
+                entry_widget.delete(0, "end")
+                entry_widget.insert(0, path)
+
+        # Carrier Image
+        ctk.CTkLabel(parent, text="Carrier Image (PNG)", font=FONT_LABEL, anchor="w").pack(fill="x", **pad)
+        row1 = ctk.CTkFrame(parent, fg_color="transparent")
+        row1.pack(fill="x", padx=16, pady=(0, 6))
+        self._steg_carrier_entry = ctk.CTkEntry(row1, placeholder_text="Select a cover PNG image...", width=480, height=36, font=FONT_SMALL)
+        self._steg_carrier_entry.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row1, text="Browse", width=120, height=36, command=lambda: select_file(self._steg_carrier_entry, filetypes=[("PNG Images", "*.png")])).pack(side="left")
+
+        # Payload File
+        ctk.CTkLabel(parent, text="Payload File (To embed)", font=FONT_LABEL, anchor="w").pack(fill="x", **pad)
+        row2 = ctk.CTkFrame(parent, fg_color="transparent")
+        row2.pack(fill="x", padx=16, pady=(0, 6))
+        self._steg_payload_entry = ctk.CTkEntry(row2, placeholder_text="Select file to hide (e.g. secret.txt.enc)", width=480, height=36, font=FONT_SMALL)
+        self._steg_payload_entry.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row2, text="Browse", width=120, height=36, command=lambda: select_file(self._steg_payload_entry)).pack(side="left")
+
+        # Output File
+        ctk.CTkLabel(parent, text="Output File", font=FONT_LABEL, anchor="w").pack(fill="x", **pad)
+        row3 = ctk.CTkFrame(parent, fg_color="transparent")
+        row3.pack(fill="x", padx=16, pady=(0, 6))
+        self._steg_output_entry = ctk.CTkEntry(row3, placeholder_text="Output path (PNG or recovered payload)", width=480, height=36, font=FONT_SMALL)
+        self._steg_output_entry.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row3, text="Browse Save", width=120, height=36, command=lambda: select_file(self._steg_output_entry, mode="save", filetypes=[("PNG Images", "*.png"), ("All Files", "*.*")])).pack(side="left")
+
+        # Action Buttons
+        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=16, pady=24)
+        
+        ctk.CTkButton(
+            btn_frame, text="🖼️  Embed Payload", width=300, height=BTN_HEIGHT, font=FONT_LABEL, command=self._do_steg_embed
+        ).pack(side="left", padx=(0, 8))
+        
+        ctk.CTkButton(
+            btn_frame, text="🔍  Extract Payload", width=300, height=BTN_HEIGHT, font=FONT_LABEL,
+            fg_color="#2d6a4f", hover_color="#1b4332", command=self._do_steg_extract
+        ).pack(side="left")
+
     def _build_log_tab(self, parent):
         # Toolbar
         toolbar = ctk.CTkFrame(parent, fg_color="transparent")
@@ -306,11 +374,48 @@ class HexCryptApp(ctk.CTk):
         ).pack(**pad)
 
     # ── Actions ──────────────────────────────
+    def _on_mode_change(self, value):
+        if value == "Symmetric":
+            self._key_label.configure(text="Key or Passphrase")
+            self._passphrase_switch.configure(state="normal")
+            self._key_entry.configure(placeholder_text="Paste key here (leave blank to auto-generate)")
+            self._generate_btn.configure(text="Generate Key")
+        else:
+            self._passphrase_var.set(False)
+            self._toggle_passphrase()
+            self._passphrase_switch.configure(state="disabled")
+            self._key_label.configure(text="Recipient PubKey (Encrypt) / Your PrivKey (Decrypt)")
+            self._key_entry.configure(placeholder_text="Paste X25519 key here")
+            self._generate_btn.configure(text="Gen Keypair")
+
     def _generate_key(self):
-        key = core.generate_key()
-        self._key_entry.delete(0, "end")
-        self._key_entry.insert(0, key)
-        self._set_status("New key generated and placed in the Key field.")
+        if self._mode_var.get() == "Symmetric":
+            key = core.generate_key()
+            self._key_entry.delete(0, "end")
+            self._key_entry.insert(0, key)
+            self._set_status("New key generated and placed in the Key field.")
+        else:
+            priv, pub = core.generate_x25519_keypair()
+            top = ctk.CTkToplevel(self)
+            top.title("X25519 Keypair")
+            top.geometry("600x300")
+            top.transient(self)
+            top.grab_set()
+            
+            ctk.CTkLabel(top, text="Private Key (Keep Secret):", font=FONT_LABEL).pack(pady=(10, 0), padx=10, anchor="w")
+            priv_entry = ctk.CTkEntry(top, font=FONT_MONO)
+            priv_entry.pack(fill="x", padx=10, pady=2)
+            priv_entry.insert(0, priv)
+            priv_entry.configure(state="readonly")
+            
+            ctk.CTkLabel(top, text="Public Key (Share with Sender):", font=FONT_LABEL).pack(pady=(10, 0), padx=10, anchor="w")
+            pub_entry = ctk.CTkEntry(top, font=FONT_MONO)
+            pub_entry.pack(fill="x", padx=10, pady=2)
+            pub_entry.insert(0, pub)
+            pub_entry.configure(state="readonly")
+            
+            ctk.CTkButton(top, text="Close", command=top.destroy).pack(pady=20)
+            self._set_status("Generated new X25519 keypair.")
 
     def _toggle_passphrase(self):
         if self._passphrase_var.get():
@@ -329,32 +434,42 @@ class HexCryptApp(ctk.CTk):
             messagebox.showwarning("Missing Input", "Please enter text to encrypt.")
             return
 
-        if is_passphrase:
+        if self._mode_var.get() == "Asymmetric":
             if not key_text:
-                messagebox.showwarning("Missing Passphrase", "Please enter a passphrase.")
+                messagebox.showwarning("Missing Key", "Please enter the Recipient's Public Key.")
                 return
             try:
-                result = core.encrypt_with_passphrase(input_text, key_text)
+                result = core.encrypt_asymmetric(input_text.encode('utf-8'), key_text)
             except Exception as e:
-                messagebox.showerror("Encryption Error", str(e))
+                messagebox.showerror("Encryption Error", f"Asymmetric encrypt failed:\n{e}")
                 return
         else:
-            # Auto-generate key if blank
-            if not key_text:
-                key_text = core.generate_key()
-                self._key_entry.delete(0, "end")
-                self._key_entry.insert(0, key_text)
-            try:
-                result = core.encrypt_text(input_text, key_text)
-            except Exception as e:
-                messagebox.showerror("Encryption Error", str(e))
-                return
+            if is_passphrase:
+                if not key_text:
+                    messagebox.showwarning("Missing Passphrase", "Please enter a passphrase.")
+                    return
+                try:
+                    result = core.encrypt_with_passphrase(input_text, key_text)
+                except Exception as e:
+                    messagebox.showerror("Encryption Error", str(e))
+                    return
+            else:
+                # Auto-generate key if blank
+                if not key_text:
+                    key_text = core.generate_key()
+                    self._key_entry.delete(0, "end")
+                    self._key_entry.insert(0, key_text)
+                try:
+                    result = core.encrypt_text(input_text, key_text)
+                except Exception as e:
+                    messagebox.showerror("Encryption Error", str(e))
+                    return
 
         self._current_output = result
         self._current_key    = "***PASSPHRASE***" if is_passphrase else key_text
         self._set_output(result)
         self._set_key_display(self._current_key)
-        _append_log("Encrypt", input_text, self._current_key, result)
+        _append_log(f"Encrypt ({self._mode_var.get()})", input_text, self._current_key, result)
         self._set_status(f"Encrypted successfully at {datetime.now().strftime('%H:%M:%S')}.")
 
     def _do_decrypt(self):
@@ -379,10 +494,14 @@ class HexCryptApp(ctk.CTk):
                 return
 
         try:
-            if is_passphrase:
-                result = core.decrypt_with_passphrase(input_text, key_text, ttl=ttl)
+            if self._mode_var.get() == "Asymmetric":
+                result_bytes = core.decrypt_asymmetric(input_text, key_text, ttl=ttl)
+                result = result_bytes.decode('utf-8')
             else:
-                result = core.decrypt_text(input_text, key_text, ttl=ttl)
+                if is_passphrase:
+                    result = core.decrypt_with_passphrase(input_text, key_text, ttl=ttl)
+                else:
+                    result = core.decrypt_text(input_text, key_text, ttl=ttl)
         except core.ExpiredToken:
             messagebox.showerror("Decryption Error", "Token Expired: This message self-destructed.")
             return
@@ -400,7 +519,7 @@ class HexCryptApp(ctk.CTk):
         self._current_key    = "***PASSPHRASE***" if is_passphrase else key_text
         self._set_output(result)
         self._set_key_display(self._current_key)
-        _append_log("Decrypt", input_text, self._current_key, result)
+        _append_log(f"Decrypt ({self._mode_var.get()})", input_text, self._current_key, result)
         self._set_status(f"Decrypted successfully at {datetime.now().strftime('%H:%M:%S')}.")
 
     def _clear_fields(self):
@@ -413,7 +532,57 @@ class HexCryptApp(ctk.CTk):
         self._current_key    = ""
         self._passphrase_var.set(False)
         self._toggle_passphrase()
+        
+        # Steg tab clear
+        if hasattr(self, '_steg_carrier_entry'):
+            self._steg_carrier_entry.delete(0, "end")
+            self._steg_payload_entry.delete(0, "end")
+            self._steg_output_entry.delete(0, "end")
+            
         self._set_status("Fields cleared.")
+
+    def _do_steg_embed(self):
+        carrier = self._steg_carrier_entry.get().strip()
+        payload = self._steg_payload_entry.get().strip()
+        output  = self._steg_output_entry.get().strip()
+        
+        if not carrier or not payload or not output:
+            messagebox.showwarning("Missing Fields", "Please select Carrier, Payload, and Output files for embedding.")
+            return
+            
+        try:
+            from hexcrypt import steg
+        except ImportError:
+            messagebox.showerror("Dependency Error", "Pillow library is required for steganography. Please run: pip install Pillow")
+            return
+            
+        try:
+            steg.embed_data(carrier, payload, output)
+            self._set_status("Payload embedded successfully!")
+            messagebox.showinfo("Success", f"Embedded payload into {output}")
+        except Exception as e:
+            messagebox.showerror("Steganography Error", f"Failed to embed:\n{e}")
+
+    def _do_steg_extract(self):
+        carrier = self._steg_carrier_entry.get().strip()
+        output  = self._steg_output_entry.get().strip()
+        
+        if not carrier or not output:
+            messagebox.showwarning("Missing Fields", "Please select Carrier and Output files for extraction.")
+            return
+            
+        try:
+            from hexcrypt import steg
+        except ImportError:
+            messagebox.showerror("Dependency Error", "Pillow library is required for steganography. Please run: pip install Pillow")
+            return
+            
+        try:
+            steg.extract_data(carrier, output)
+            self._set_status("Payload extracted successfully!")
+            messagebox.showinfo("Success", f"Extracted payload to {output}")
+        except Exception as e:
+            messagebox.showerror("Steganography Error", f"Failed to extract:\n{e}")
 
     def _copy_output(self):
         if self._current_output:
