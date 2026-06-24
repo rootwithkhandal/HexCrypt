@@ -8,7 +8,7 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
 
-from core import encrypt_text, decrypt_text, generate_key
+from cryptography.fernet import Fernet
 
 # ─────────────────────────────────────────────
 #  Constants
@@ -294,7 +294,7 @@ class HexCryptApp(ctk.CTk):
 
     # ── Actions ──────────────────────────────
     def _generate_key(self):
-        key = generate_key().decode()
+        key = Fernet.generate_key().decode()
         self._key_entry.delete(0, "end")
         self._key_entry.insert(0, key)
         self._set_status("New key generated and placed in the Key field.")
@@ -309,12 +309,13 @@ class HexCryptApp(ctk.CTk):
 
         # Auto-generate key if blank
         if not key_text:
-            key_text = generate_key().decode()
+            key_text = Fernet.generate_key().decode()
             self._key_entry.delete(0, "end")
             self._key_entry.insert(0, key_text)
 
         try:
-            result = encrypt_text(input_text, key_text.encode())
+            f = Fernet(key_text)
+            result = f.encrypt(input_text.encode()).decode()
         except Exception as e:
             messagebox.showerror("Encryption Error", str(e))
             return
@@ -338,7 +339,8 @@ class HexCryptApp(ctk.CTk):
             return
 
         try:
-            result = decrypt_text(input_text, key_text)
+            f = Fernet(key_text)
+            result = f.decrypt(input_text.encode()).decode()
         except Exception as e:
             messagebox.showerror("Decryption Error", f"Could not decrypt.\n\n{e}")
             return
