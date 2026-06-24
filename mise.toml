@@ -1,6 +1,9 @@
 [tools]
 python = "3.12"
+node = "20"
 
 [tasks]
-install = "python -m pip install -e core/ -e tool/"
-run = "python -m hexcrypt.app"
+install = "python -m pip install -e core/ -e tool/ && cd web && npm install"
+backend = "python -m hexcrypt.api"
+frontend = "cd web && npm run dev"
+run = { depends = ["backend", "frontend"] }

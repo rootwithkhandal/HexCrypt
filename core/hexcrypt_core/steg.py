@@ -2,14 +2,19 @@ from PIL import Image
 import struct
 import os
 
-def embed_data(carrier_path: str, payload_path: str, output_path: str):
+def embed_data(carrier_path: str, payload_path: str, output_path: str, filename: str = ""):
     """Embed the contents of payload_path into the LSBs of the carrier image."""
     with open(payload_path, 'rb') as f:
         payload = f.read()
     
-    # Prefix with 8-byte length
-    length_bytes = struct.pack(">Q", len(payload))
-    data = length_bytes + payload
+    # Pack filename: 2-byte length + filename bytes
+    name_bytes = filename.encode('utf-8')
+    name_len = struct.pack(">H", len(name_bytes))
+    full_payload = name_len + name_bytes + payload
+    
+    # Prefix with 8-byte length of full_payload
+    length_bytes = struct.pack(">Q", len(full_payload))
+    data = length_bytes + full_payload
     
     img = Image.open(carrier_path)
     if img.mode not in ('RGB', 'RGBA'):
@@ -38,8 +43,8 @@ def embed_data(carrier_path: str, payload_path: str, output_path: str):
     img.putdata(new_pixels)
     img.save(output_path, "PNG")
 
-def extract_data(carrier_path: str, output_path: str):
-    """Extract data from the LSBs of a carrier image and write it to output_path."""
+def extract_data(carrier_path: str, output_path: str) -> str:
+    """Extract data from the LSBs of a carrier image, write it to output_path, and return original filename."""
     img = Image.open(carrier_path)
     if img.mode not in ('RGB', 'RGBA'):
         img = img.convert('RGBA')
@@ -65,13 +70,27 @@ def extract_data(carrier_path: str, output_path: str):
     if len(flat_pixels) < required_bits:
         raise ValueError("Corrupted or invalid stego image: declared payload length exceeds image capacity.")
         
-    payload = bytearray(payload_len)
+    full_payload = bytearray(payload_len)
     for i in range(payload_len):
         byte = 0
         for j in range(8):
             idx = 64 + i * 8 + j
             byte = (byte << 1) | (flat_pixels[idx] & 1)
-        payload[i] = byte
+        full_payload[i] = byte
+        
+    if payload_len >= 2:
+        name_len = struct.unpack(">H", full_payload[:2])[0]
+        if 2 + name_len <= payload_len:
+            filename = full_payload[2:2+name_len].decode('utf-8', errors='ignore')
+            actual_payload = full_payload[2+name_len:]
+        else:
+            filename = ""
+            actual_payload = full_payload
+    else:
+        filename = ""
+        actual_payload = full_payload
         
     with open(output_path, 'wb') as f:
-        f.write(payload)
+        f.write(actual_payload)
+        
+    return filename
