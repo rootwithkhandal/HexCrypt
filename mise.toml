@@ -2,5 +2,5 @@
 python = "3.12"
 
 [tasks]
-install = "pip3 install -r requirements.txt"
-run = "python3 -m hexcrypt.app"
+install = "python -m pip install -e core/ -e tool/"
+run = "python -m hexcrypt.app"

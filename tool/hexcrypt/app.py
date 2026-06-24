@@ -9,7 +9,7 @@ from datetime import datetime
 import customtkinter as ctk
 from tkinter import messagebox
 
-from hexcrypt import core
+from hexcrypt_core import core
 from cryptography.exceptions import InvalidTag
 
 # ─────────────────────────────────────────────
@@ -610,7 +610,7 @@ class HexCryptApp(ctk.CTk):
             return
             
         try:
-            from hexcrypt import steg
+            from hexcrypt_core import steg
         except ImportError:
             messagebox.showerror("Dependency Error", "Pillow library is required for steganography. Please run: pip install Pillow")
             return
@@ -631,7 +631,7 @@ class HexCryptApp(ctk.CTk):
             return
             
         try:
-            from hexcrypt import steg
+            from hexcrypt_core import steg
         except ImportError:
             messagebox.showerror("Dependency Error", "Pillow library is required for steganography. Please run: pip install Pillow")
             return
@@ -791,6 +791,9 @@ class HexCryptApp(ctk.CTk):
 # ─────────────────────────────────────────────
 #  Entry point
 # ─────────────────────────────────────────────
-if __name__ == "__main__":
+def main():
     app = HexCryptApp()
     app.mainloop()
+
+if __name__ == "__main__":
+    main()

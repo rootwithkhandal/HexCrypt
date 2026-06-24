@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexcrypt-core"
+version = "2.0.0"
+authors = [
+  { name="rootwithkhandal" },
+]
+description = "Core cryptography primitives for HexCrypt."
+requires-python = ">=3.8"
+dependencies = [
+    "cryptography>=42.0.0",
+    "Pillow>=10.0.0"
+]
+
+[tool.setuptools.packages.find]
+include = ["hexcrypt_core*"]

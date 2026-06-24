@@ -2,8 +2,9 @@ import argparse
 import os
 import getpass
 import sys
-from hexcrypt import keystore
-from hexcrypt import core
+import argcomplete
+from hexcrypt_core import keystore
+from hexcrypt_core import core
 
 def main():
     parser = argparse.ArgumentParser(description="HexCrypt CLI")
@@ -63,6 +64,7 @@ def main():
     steg_parser.add_argument("--carrier", required=True, help="Carrier image path (PNG)")
     steg_parser.add_argument("--out", required=True, help="Output path (PNG if embedding, file if extracting)")
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     if args.command == "keystore":
@@ -222,7 +224,7 @@ def main():
             print(f"Directory processing complete. Output saved to: {out_dir}")
     elif args.command == "steg":
         try:
-            from hexcrypt import steg
+            from hexcrypt_core import steg
         except ImportError:
             print("Pillow library is required for steganography. Please run: pip install Pillow")
             sys.exit(1)

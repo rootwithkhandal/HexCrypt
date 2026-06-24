@@ -42,3 +42,6 @@ desktop.ini
 *.env
 .env.*
 secrets.py
+
+
+tests/

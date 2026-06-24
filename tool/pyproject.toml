@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexcrypt-tool"
+version = "2.0.0"
+authors = [
+  { name="rootwithkhandal", email="user@example.com" },
+]
+description = "A powerful AES-256-GCM / X25519 desktop encryption tool with Steganography."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "hexcrypt-core",
+    "customtkinter>=5.2.0",
+    
+    "argcomplete>=3.0.0"
+]
+
+[project.scripts]
+hexcrypt = "hexcrypt.cli:main"
+hexcrypt-gui = "hexcrypt.app:main"
+
+[tool.setuptools.packages.find]
+include = ["hexcrypt*"]
